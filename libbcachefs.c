@@ -677,6 +677,7 @@ void bch2_sb_print(struct bch_sb *sb, bool print_layout,
 	struct bch_sb_field_members *mi;
 	char user_uuid_str[40], internal_uuid_str[40];
 	char features_str[500];
+	char compat_features_str[500];
 	char fields_have_str[200];
 	char label[BCH_SB_LABEL_SIZE + 1];
 	char time_str[64];
@@ -730,6 +731,10 @@ void bch2_sb_print(struct bch_sb *sb, bool print_layout,
 			   bch2_sb_features,
 			   le64_to_cpu(sb->features[0]));
 
+	bch2_flags_to_text(&PBUF(compat_features_str),
+			   bch2_sb_compat,
+			   le64_to_cpu(sb->compat[0]));
+
 	vstruct_for_each(sb, f)
 		fields_have |= 1 << le32_to_cpu(f->type);
 	bch2_flags_to_text(&PBUF(fields_have_str),
@@ -747,6 +752,7 @@ void bch2_sb_print(struct bch_sb *sb, bool print_layout,
 	       "Error action:			%s\n"
 	       "Clean:				%llu\n"
 	       "Features:			%s\n"
+	       "Compat features:		%s\n"
 
 	       "Metadata replicas:		%llu\n"
 	       "Data replicas:			%llu\n"
@@ -784,6 +790,7 @@ void bch2_sb_print(struct bch_sb *sb, bool print_layout,
 
 	       BCH_SB_CLEAN(sb),
 	       features_str,
+	       compat_features_str,
 
 	       BCH_SB_META_REPLICAS_WANT(sb),
 	       BCH_SB_DATA_REPLICAS_WANT(sb),
