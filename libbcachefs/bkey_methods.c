@@ -98,9 +98,47 @@ const char *bch2_bkey_val_invalid(struct bch_fs *c, struct bkey_s_c k)
 	return bch2_bkey_ops[k.k->type].key_invalid(c, k);
 }
 
+static unsigned bch2_key_types_allowed[] = {
+	[BKEY_TYPE_EXTENTS] =
+		(1U << KEY_TYPE_discard)|
+		(1U << KEY_TYPE_error)|
+		(1U << KEY_TYPE_extent)|
+		(1U << KEY_TYPE_reservation)|
+		(1U << KEY_TYPE_reflink_p)|
+		(1U << KEY_TYPE_inline_data),
+	[BKEY_TYPE_INODES] =
+		(1U << KEY_TYPE_inode)|
+		(1U << KEY_TYPE_inode_generation),
+	[BKEY_TYPE_DIRENTS] =
+		(1U << KEY_TYPE_whiteout)|
+		(1U << KEY_TYPE_dirent),
+	[BKEY_TYPE_XATTRS] =
+		(1U << KEY_TYPE_whiteout)|
+		(1U << KEY_TYPE_xattr),
+	[BKEY_TYPE_ALLOC] =
+		(1U << KEY_TYPE_alloc)|
+		(1U << KEY_TYPE_alloc_v2),
+	[BKEY_TYPE_QUOTAS] =
+		(1U << KEY_TYPE_quota),
+	[BKEY_TYPE_EC] =
+		(1U << KEY_TYPE_stripe),
+	[BKEY_TYPE_REFLINK] =
+		(1U << KEY_TYPE_reflink_v)|
+		(1U << KEY_TYPE_indirect_inline_data),
+	[BKEY_TYPE_BTREE] =
+		(1U << KEY_TYPE_btree_ptr)|
+		(1U << KEY_TYPE_btree_ptr_v2),
+};
+
 const char *__bch2_bkey_invalid(struct bch_fs *c, struct bkey_s_c k,
 				enum btree_node_type type)
 {
+	unsigned key_types_allowed = (1U << KEY_TYPE_deleted)|
+		bch2_key_types_allowed[type] ;
+
+	if (!(key_types_allowed & (1U << k.k->type)))
+		return "invalid key type for this btree";
+
 	if (k.k->u64s < BKEY_U64s)
 		return "u64s too small";
 
