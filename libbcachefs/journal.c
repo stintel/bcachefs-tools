@@ -192,6 +192,10 @@ static bool __journal_entry_close(struct journal *j)
 	 */
 	buf->data->last_seq	= cpu_to_le64(journal_last_seq(j));
 
+	pr_info("set entry %llu last_seq %llu",
+		le64_to_cpu(buf->data->seq),
+		le64_to_cpu(buf->data->last_seq));
+
 	__bch2_journal_pin_put(j, le64_to_cpu(buf->data->seq));
 
 	/* Initialize new buffer: */
@@ -1009,6 +1013,8 @@ int bch2_fs_journal_start(struct journal *j, u64 cur_seq,
 	if (!list_empty(journal_entries))
 		last_seq = le64_to_cpu(list_last_entry(journal_entries,
 				struct journal_replay, list)->j.last_seq);
+
+	pr_info("last_seq: %llu cur_seq %llu", last_seq, cur_seq);
 
 	nr = cur_seq - last_seq;
 

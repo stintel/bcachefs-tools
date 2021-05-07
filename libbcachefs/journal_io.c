@@ -1266,6 +1266,9 @@ static void journal_write_done(struct closure *cl)
 		j->err_seq	= seq;
 
 	if (!JSET_NO_FLUSH(w->data)) {
+		pr_info("setting last_seq_ondisk %llu flushed_seq_ondisk %llu",
+			last_seq, seq);
+
 		j->flushed_seq_ondisk = seq;
 		j->last_seq_ondisk = last_seq;
 	}
@@ -1335,6 +1338,10 @@ static void do_journal_write(struct closure *cl)
 	struct bio *bio;
 	unsigned sectors = vstruct_sectors(w->data, c->block_bits);
 
+	pr_info("entry %llu last_seq %llu",
+		le64_to_cpu(w->data->seq),
+		le64_to_cpu(w->data->last_seq));
+
 	extent_for_each_ptr(bkey_i_to_s_extent(&w->key), ptr) {
 		ca = bch_dev_bkey_exists(c, ptr->dev);
 		if (!percpu_ref_tryget(&ca->io_ref)) {
@@ -1393,6 +1400,10 @@ void bch2_journal_write(struct closure *cl)
 
 	journal_buf_realloc(j, w);
 	jset = w->data;
+
+	pr_info("entry %llu last_seq %llu",
+		le64_to_cpu(jset->seq),
+		le64_to_cpu(jset->last_seq));
 
 	j->write_start_time = local_clock();
 
