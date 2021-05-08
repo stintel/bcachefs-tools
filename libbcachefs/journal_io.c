@@ -1237,7 +1237,7 @@ static void journal_write_done(struct closure *cl)
 		bch2_bkey_devs(bkey_i_to_s_c(&w->key));
 	struct bch_replicas_padded replicas;
 	union journal_res_state old, new;
-	u64 v, seq, last_seq;
+	u64 v, seq;
 	int err = 0;
 
 	bch2_time_stats_update(j->write_time, j->write_start_time);
@@ -1256,7 +1256,6 @@ static void journal_write_done(struct closure *cl)
 
 	spin_lock(&j->lock);
 	seq = le64_to_cpu(w->data->seq);
-	last_seq = le64_to_cpu(w->data->last_seq);
 
 	if (seq >= j->pin.front)
 		journal_seq_pin(j, seq)->devs = devs;
@@ -1266,11 +1265,8 @@ static void journal_write_done(struct closure *cl)
 		j->err_seq	= seq;
 
 	if (!JSET_NO_FLUSH(w->data)) {
-		pr_info("setting last_seq_ondisk %llu flushed_seq_ondisk %llu",
-			last_seq, seq);
-
 		j->flushed_seq_ondisk = seq;
-		j->last_seq_ondisk = last_seq;
+		j->last_seq_ondisk = w->last_seq;
 	}
 
 	/*
@@ -1338,10 +1334,6 @@ static void do_journal_write(struct closure *cl)
 	struct bio *bio;
 	unsigned sectors = vstruct_sectors(w->data, c->block_bits);
 
-	pr_info("entry %llu last_seq %llu",
-		le64_to_cpu(w->data->seq),
-		le64_to_cpu(w->data->last_seq));
-
 	extent_for_each_ptr(bkey_i_to_s_extent(&w->key), ptr) {
 		ca = bch_dev_bkey_exists(c, ptr->dev);
 		if (!percpu_ref_tryget(&ca->io_ref)) {
@@ -1401,10 +1393,6 @@ void bch2_journal_write(struct closure *cl)
 	journal_buf_realloc(j, w);
 	jset = w->data;
 
-	pr_info("entry %llu last_seq %llu",
-		le64_to_cpu(jset->seq),
-		le64_to_cpu(jset->last_seq));
-
 	j->write_start_time = local_clock();
 
 	spin_lock(&j->lock);
@@ -1414,7 +1402,7 @@ void bch2_journal_write(struct closure *cl)
 	    test_bit(JOURNAL_MAY_SKIP_FLUSH, &j->flags)) {
 		w->noflush = true;
 		SET_JSET_NO_FLUSH(jset, true);
-		jset->last_seq = 0;
+		jset->last_seq = w->last_seq = 0;
 
 		j->nr_noflush_writes++;
 	} else {
