@@ -806,12 +806,12 @@ static int extent_update_to_keys(struct btree_trans *trans,
 {
 	int ret;
 
-	if (bkey_deleted(&n.k->k))
-		return 0;
-
 	ret = bch2_extent_can_insert(trans, n.iter, n.k);
 	if (ret)
 		return ret;
+
+	if (bkey_deleted(&n.k->k))
+		return 0;
 
 	n.iter = bch2_trans_get_iter(trans, n.iter->btree_id, n.k->k.p,
 				     BTREE_ITER_INTENT|
@@ -823,10 +823,35 @@ static int extent_update_to_keys(struct btree_trans *trans,
 	return 0;
 }
 
+/* note: uses bch2_trans_update2 */
+static int __btree_delete_at(struct btree_trans *trans,
+			     enum btree_id btree_id,
+			     struct bpos pos)
+{
+	struct btree_iter *iter;
+	struct bkey_i *update;
+	int ret;
+
+	update = bch2_trans_kmalloc(trans, sizeof(struct bkey));
+	if ((ret = PTR_ERR_OR_ZERO(update)))
+		return ret;
+
+	bkey_init(&update->k);
+	update->k.p = pos;
+
+	iter = bch2_trans_get_iter(trans, btree_id, pos,
+				   BTREE_ITER_NOT_EXTENTS|BTREE_ITER_INTENT);
+	bch2_trans_update2(trans, iter, update);
+	bch2_trans_iter_put(trans, iter);
+	return 0;
+}
+
 static int extent_handle_overwrites(struct btree_trans *trans,
+				    struct btree_insert_entry *insert_entry,
 				    enum btree_id btree_id,
 				    struct bkey_i *insert)
 {
+	struct bch_fs *c = trans->c;
 	struct btree_iter *iter, *update_iter;
 	struct bpos start = bkey_start_pos(&insert->k);
 	struct bkey_i *update;
@@ -834,17 +859,39 @@ static int extent_handle_overwrites(struct btree_trans *trans,
 	int ret = 0;
 
 	iter = bch2_trans_get_iter(trans, btree_id, start,
+				   BTREE_ITER_NOT_EXTENTS|
 				   BTREE_ITER_INTENT);
 	k = bch2_btree_iter_peek_with_updates(iter);
+	if (!k.k || (ret = bkey_err(k)))
+		goto out;
 
-	while (k.k && !(ret = bkey_err(k))) {
-		if (bkey_cmp(insert->k.p, bkey_start_pos(k.k)) <= 0)
-			break;
+	if (bch2_bkey_maybe_mergable(k.k, &insert->k)) {
+		struct bpos l_pos = k.k->p;
 
+		update = bch2_trans_kmalloc(trans, bkey_bytes(k.k));
+		if ((ret = PTR_ERR_OR_ZERO(update)))
+			goto out;
+
+		bkey_reassemble(update, k);
+
+		if (bch2_bkey_merge(c, bkey_i_to_s(update), bkey_i_to_s_c(insert))) {
+			ret = __btree_delete_at(trans, btree_id, l_pos);
+			if (ret)
+				goto out;
+
+			insert_entry->k = insert = update;
+			goto next;
+		}
+	}
+
+	if (!bkey_cmp(k.k->p, bkey_start_pos(&insert->k)))
+		goto next;
+
+	while (bkey_cmp(insert->k.p, bkey_start_pos(k.k)) > 0) {
 		if (bkey_cmp(bkey_start_pos(k.k), start) < 0) {
 			update = bch2_trans_kmalloc(trans, bkey_bytes(k.k));
 			if ((ret = PTR_ERR_OR_ZERO(update)))
-				break;
+				goto out;
 
 			bkey_reassemble(update, k);
 
@@ -857,26 +904,16 @@ static int extent_handle_overwrites(struct btree_trans *trans,
 			bch2_trans_iter_put(trans, update_iter);
 		}
 
-		if (bkey_cmp(k.k->p, insert->k.p) < 0 ||
-		    (!bkey_cmp(k.k->p, insert->k.p) && bkey_deleted(&insert->k))) {
-			update = bch2_trans_kmalloc(trans, sizeof(struct bkey));
-			if ((ret = PTR_ERR_OR_ZERO(update)))
-				break;
-
-			bkey_init(&update->k);
-			update->k.p = k.k->p;
-
-			update_iter = bch2_trans_get_iter(trans, btree_id, update->k.p,
-							  BTREE_ITER_NOT_EXTENTS|
-							  BTREE_ITER_INTENT);
-			bch2_trans_update2(trans, update_iter, update);
-			bch2_trans_iter_put(trans, update_iter);
+		if (bkey_cmp(k.k->p, insert->k.p) <= 0) {
+			ret = __btree_delete_at(trans, btree_id, k.k->p);
+			if (ret)
+				goto out;
 		}
 
 		if (bkey_cmp(k.k->p, insert->k.p) > 0) {
 			update = bch2_trans_kmalloc(trans, bkey_bytes(k.k));
 			if ((ret = PTR_ERR_OR_ZERO(update)))
-				break;
+				goto out;
 
 			bkey_reassemble(update, k);
 			bch2_cut_front(insert->k.p, update);
@@ -886,11 +923,16 @@ static int extent_handle_overwrites(struct btree_trans *trans,
 							  BTREE_ITER_INTENT);
 			bch2_trans_update2(trans, update_iter, update);
 			bch2_trans_iter_put(trans, update_iter);
-			break;
+			goto out;
 		}
-
+next:
 		k = bch2_btree_iter_next_with_updates(iter);
+		if (!k.k || (ret = bkey_err(k)))
+			goto out;
 	}
+
+	bch2_bkey_merge(c, bkey_i_to_s(insert), k);
+out:
 	bch2_trans_iter_put(trans, iter);
 
 	return ret;
@@ -957,7 +999,7 @@ int __bch2_trans_commit(struct btree_trans *trans)
 	/* Turn extents updates into keys: */
 	trans_for_each_update(trans, i)
 		if (i->is_extent) {
-			ret = extent_handle_overwrites(trans, i->btree_id, i->k);
+			ret = extent_handle_overwrites(trans, i, i->btree_id, i->k);
 			if (unlikely(ret))
 				goto out;
 		}

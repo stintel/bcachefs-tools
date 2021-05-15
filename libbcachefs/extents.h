@@ -394,8 +394,7 @@ void bch2_btree_ptr_v2_compat(enum btree_id, unsigned, unsigned,
 
 const char *bch2_extent_invalid(const struct bch_fs *, struct bkey_s_c);
 void bch2_extent_to_text(struct printbuf *, struct bch_fs *, struct bkey_s_c);
-enum merge_result bch2_extent_merge(struct bch_fs *,
-				    struct bkey_s, struct bkey_s);
+bool bch2_extent_merge(struct bch_fs *, struct bkey_s, struct bkey_s_c);
 
 #define bch2_bkey_ops_extent (struct bkey_ops) {		\
 	.key_invalid	= bch2_extent_invalid,			\
@@ -409,8 +408,7 @@ enum merge_result bch2_extent_merge(struct bch_fs *,
 
 const char *bch2_reservation_invalid(const struct bch_fs *, struct bkey_s_c);
 void bch2_reservation_to_text(struct printbuf *, struct bch_fs *, struct bkey_s_c);
-enum merge_result bch2_reservation_merge(struct bch_fs *,
-					 struct bkey_s, struct bkey_s);
+bool bch2_reservation_merge(struct bch_fs *, struct bkey_s, struct bkey_s_c);
 
 #define bch2_bkey_ops_reservation (struct bkey_ops) {		\
 	.key_invalid	= bch2_reservation_invalid,		\
@@ -527,6 +525,30 @@ static inline struct bch_devs_list bch2_bkey_cached_devs(struct bkey_s_c k)
 			ret.devs[ret.nr++] = ptr->dev;
 
 	return ret;
+}
+
+static inline unsigned bch2_bkey_ptr_data_type(struct bkey_s_c k, const struct bch_extent_ptr *ptr)
+{
+	switch (k.k->type) {
+	case KEY_TYPE_btree_ptr:
+	case KEY_TYPE_btree_ptr_v2:
+		return BCH_DATA_btree;
+	case KEY_TYPE_extent:
+	case KEY_TYPE_reflink_v:
+		return BCH_DATA_user;
+	case KEY_TYPE_stripe: {
+		struct bkey_s_c_stripe s = bkey_s_c_to_stripe(k);
+
+		BUG_ON(ptr < s.v->ptrs ||
+		       ptr >= s.v->ptrs + s.v->nr_blocks);
+
+		return ptr >= s.v->ptrs + s.v->nr_blocks - s.v->nr_redundant
+			? BCH_DATA_parity
+			: BCH_DATA_user;
+	}
+	default:
+		BUG();
+	}
 }
 
 unsigned bch2_bkey_nr_ptrs(struct bkey_s_c);
