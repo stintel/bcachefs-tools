@@ -21,6 +21,6 @@ tests/__pycache__/
 !.travis.yml
 !.editorconfig
 
-mount/target
+rust-src/*/target
 mount.bcachefs
 bcachefs-principles-of-operation.*

@@ -11,6 +11,7 @@ fn main() {
 	println!("{}", libbcachefs_inc_dir.display());
 
 	println!("cargo:rustc-link-lib=dylib=bcachefs");
+	println!("cargo:rustc-link-lib=dylib=bcachefs_rs");
 	println!("cargo:rustc-link-search={}", env!("LIBBCACHEFS_LIB"));
 
 	let _libbcachefs_dir = top_dir.join("libbcachefs").join("libbcachefs");

@@ -18,42 +18,6 @@
 #include "libbcachefs/checksum.h"
 #include "crypto.h"
 
-char *read_passphrase(const char *prompt)
-{
-	char *buf = NULL;
-	size_t buflen = 0;
-	ssize_t len;
-
-	if (isatty(STDIN_FILENO)) {
-		struct termios old, new;
-
-		fprintf(stderr, "%s", prompt);
-		fflush(stderr);
-
-		if (tcgetattr(STDIN_FILENO, &old))
-			die("error getting terminal attrs");
-
-		new = old;
-		new.c_lflag &= ~ECHO;
-		if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &new))
-			die("error setting terminal attrs");
-
-		len = getline(&buf, &buflen, stdin);
-
-		tcsetattr(STDIN_FILENO, TCSAFLUSH, &old);
-		fprintf(stderr, "\n");
-	} else {
-		len = getline(&buf, &buflen, stdin);
-	}
-
-	if (len < 0)
-		die("error reading passphrase");
-	if (len && buf[len - 1] == '\n')
-		buf[len - 1] = '\0';
-
-	return buf;
-}
-
 char *read_passphrase_twice(const char *prompt)
 {
 	char *pass = read_passphrase(prompt);
@@ -64,13 +28,13 @@ char *read_passphrase_twice(const char *prompt)
 	char *pass2 = read_passphrase("Enter same passphrase again: ");
 
 	if (strcmp(pass, pass2)) {
-		memzero_explicit(pass, strlen(pass));
-		memzero_explicit(pass2, strlen(pass2));
+		free_cstring(pass);
+		free_cstring(pass2);
 		die("Passphrases do not match");
 	}
 
-	memzero_explicit(pass2, strlen(pass2));
-	free(pass2);
+	free_cstring(pass);
+	free_cstring(pass2);
 
 	return pass;
 }

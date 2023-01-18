@@ -65,11 +65,13 @@ int cmd_unlock(int argc, char *argv[])
 
 	char *passphrase = read_passphrase("Enter passphrase: ");
 
+	printf("passphrase: %s\n", passphrase);
+
 	bch2_add_key(sb.sb, "user", keyring, passphrase);
 
 	bch2_free_super(&sb);
 	memzero_explicit(passphrase, strlen(passphrase));
-	free(passphrase);
+	free_cstring(passphrase);
 	return 0;
 }
 

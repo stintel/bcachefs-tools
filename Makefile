@@ -78,6 +78,7 @@ endif
 CFLAGS+=$(PKGCONFIG_CFLAGS)
 LDLIBS+=$(PKGCONFIG_LDLIBS)
 LDLIBS+=-lm -lpthread -lrt -lkeyutils -laio -ldl
+LDLIBS+=-L. -lbcachefs_rs
 LDLIBS+=$(EXTRA_LDLIBS)
 
 ifeq ($(PREFIX),/usr)
@@ -89,7 +90,7 @@ else
 endif
 
 .PHONY: all
-all: bcachefs lib
+all: bcachefs_rs bcachefs lib
 
 .PHONY: lib
 lib: libbcachefs.so
@@ -127,6 +128,7 @@ bcachefs: $(filter-out ./tests/%.o, $(OBJS))
 	$(Q)$(CC) $(LDFLAGS) $+ $(LOADLIBES) $(LDLIBS) -o $@
 
 RUST_SRCS=$(shell find rust-src/ -type f -iname '*.rs')
+BCACHEFS_RS_SRCS=$(filter %bcachefs_rs, $(RUST_SRCS))
 MOUNT_SRCS=$(filter %mount, $(RUST_SRCS))
 
 debug: CFLAGS+=-Werror -DCONFIG_BCACHEFS_DEBUG=y -DCONFIG_VALGRIND=y
@@ -138,6 +140,12 @@ libbcachefs.so: $(MOUNT_OBJ)
 	@echo "    [CC]     $@"
 	$(Q)$(CC) $(LDFLAGS) $+ -o $@ $(LDLIBS)
 
+BCACHEFS_RS_TOML=rust-src/bcachefs_rs/Cargo.toml
+bcachefs_rs: $(BCACHEFS_RS_SRCS)
+	$(CARGO_BUILD) --manifest-path $(BCACHEFS_RS_TOML)
+
+	ln -f rust-src/bcachefs_rs/target/$(CARGO_PROFILE)/libbcachefs_rs.so
+
 MOUNT_TOML=rust-src/mount/Cargo.toml
 mount.bcachefs: lib $(MOUNT_SRCS)
 	LIBBCACHEFS_LIB=$(CURDIR) \
@@ -145,7 +153,6 @@ mount.bcachefs: lib $(MOUNT_SRCS)
 	$(CARGO_BUILD) --manifest-path $(MOUNT_TOML)
 
 	ln -f rust-src/mount/target/$(CARGO_PROFILE)/bcachefs-mount $@
-
 
 tests/test_helper: $(filter ./tests/%.o, $(OBJS))
 	@echo "    [LD]     $@"
@@ -174,6 +181,7 @@ install: bcachefs lib
 	$(INSTALL) -m0755 -D initramfs/hook   $(DESTDIR)$(INITRAMFS_HOOK)
 	$(INSTALL) -m0755 -D mount.bcachefs.sh $(DESTDIR)$(ROOT_SBINDIR)
 	$(INSTALL) -m0755 -D libbcachefs.so -t $(DESTDIR)$(PREFIX)/lib/
+	$(INSTALL) -m0755 -D libbcachefs_rs.so -t $(DESTDIR)$(PREFIX)/lib/
 
 	sed -i '/^# Note: make install replaces/,$$d' $(DESTDIR)$(INITRAMFS_HOOK)
 	echo "copy_exec $(ROOT_SBINDIR)/bcachefs /sbin/bcachefs" >> $(DESTDIR)$(INITRAMFS_HOOK)
@@ -181,7 +189,7 @@ install: bcachefs lib
 .PHONY: clean
 clean:
 	@echo "Cleaning all"
-	$(Q)$(RM) bcachefs mount.bcachefs libbcachefs.so libbcachefs_mount.a tests/test_helper .version *.tar.xz $(OBJS) $(DEPS) $(DOCGENERATED)
+	$(Q)$(RM) bcachefs mount.bcachefs libbcachefs.so libbcachefs_mount.a libbcachefs_rs.so tests/test_helper .version *.tar.xz $(OBJS) $(DEPS) $(DOCGENERATED)
 	$(Q)$(RM) -rf rust-src/*/target
 
 .PHONY: deb

@@ -2,13 +2,13 @@
 #define _CRYPTO_H
 
 #include "tools-util.h"
+#include "rust-src/bcachefs_rs/src/bcachefs_rs.h"
 
 struct bch_sb;
 struct bch_sb_field_crypt;
 struct bch_key;
 struct bch_encrypted_key;
 
-char *read_passphrase(const char *);
 char *read_passphrase_twice(const char *);
 
 struct bch_key derive_passphrase(struct bch_sb_field_crypt *, const char *);
