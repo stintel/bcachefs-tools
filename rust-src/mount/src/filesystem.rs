@@ -9,9 +9,6 @@ pub struct FileSystem {
 	/// External UUID of the bcachefs
 	#[getset(get = "pub")]
 	uuid: uuid::Uuid,
-	/// Whether filesystem is encrypted
-	#[getset(get_copy = "pub")]
-	encrypted: bool,
 	/// Super block
 	#[getset(get = "pub")]
 	sb: bcachefs::bch_sb_handle,
@@ -23,7 +20,6 @@ impl std::fmt::Debug for FileSystem {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		f.debug_struct("FileSystem")
 			.field("uuid", &self.uuid)
-			.field("encrypted", &self.encrypted)
 			.field("devices", &self.device_string())
 			.finish()
 	}
@@ -34,10 +30,9 @@ impl std::fmt::Display for FileSystem {
 		let devs = self.device_string();
 		write!(
 			f,
-			"{:?}: locked?={lock} ({}) ",
+			"{:?}: ({}) ",
 			self.uuid,
 			devs,
-			lock = self.encrypted
 		)
 	}
 }
@@ -46,7 +41,6 @@ impl FileSystem {
 	pub(crate) fn new(sb: bcachefs::bch_sb_handle) -> Self {
 		Self {
 			uuid: sb.sb().uuid(),
-			encrypted: sb.sb().crypt().is_some(),
 			sb: sb,
 			devices: Vec::new(),
 		}

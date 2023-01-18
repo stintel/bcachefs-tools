@@ -73,15 +73,6 @@ fn parse_fstab_uuid(uuid_raw: &str) -> Result<Uuid, uuid::Error> {
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
-	/// Where the password would be loaded from.
-	///
-	/// Possible values are:
-	/// "fail" - don't ask for password, fail if filesystem is encrypted;
-	/// "wait" - wait for password to become available before mounting;
-	/// "ask" -  prompt the user for password;
-	#[arg(short, long, default_value = "", verbatim_doc_comment)]
-	pub key_location: KeyLoc,
-
 	/// External UUID of the bcachefs filesystem
 	///
 	/// Accepts the UUID as is or as fstab style UUID=<UUID>
@@ -99,7 +90,6 @@ pub struct Cli {
 }
 
 pub mod filesystem;
-pub mod key;
 
 // pub fn mnt_in_use()
 

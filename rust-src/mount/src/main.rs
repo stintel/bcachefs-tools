@@ -15,7 +15,7 @@ fn main() {
 
 #[tracing_attributes::instrument("main")]
 pub fn main_inner() -> anyhow::Result<()> {
-	use bcachefs_mount::{Cli, filesystem, key};
+	use bcachefs_mount::{Cli, filesystem};
 	unsafe {
 		libc::setvbuf(
 			filesystem::stdout,
@@ -36,14 +36,6 @@ pub fn main_inner() -> anyhow::Result<()> {
 		.ok_or_else(|| anyhow::anyhow!("filesystem was not found"))?;
 
 	tracing::info!(msg="found filesystem", %fs);
-	if fs.encrypted() {
-		let key = opt
-			.key_location
-			.0
-			.ok_or_else(|| anyhow::anyhow!("no keyoption specified for locked filesystem"))?;
-
-		key::prepare_key(&fs, key)?;
-	}
 
 	let mountpoint = opt
 		.mountpoint

@@ -7,7 +7,6 @@
 , udev
 , liburcu
 , zstd
-, keyutils
 , libaio
 , lz4       # liblz4
 , libsodium

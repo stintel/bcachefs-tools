@@ -1,5 +1,4 @@
 pub mod bcachefs;
-pub mod keyutils;
 pub mod rs;
 
 pub mod c {

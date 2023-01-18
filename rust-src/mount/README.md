@@ -20,12 +20,6 @@ OPTIONS:
     -o <options>                 
             Mount options [default: ]
 
-    -p, --password <password>    
-            Where the password would be loaded from.
-            
-            Possible values are: "fail" - don't ask for password, fail if filesystem is encrypted; "wait" - wait for
-            password to become available before mounting; "ask" -  prompt the user for password; [default: fail]
-
 ARGS:
     <uuid>          
             External UUID of the bcachefs filesystem
@@ -33,11 +27,6 @@ ARGS:
     <mountpoint>    
             Where the filesystem should be mounted
 ```
-
-Caveats
-=======
-
-* `--password ask` is not yet implemented, but you can use `--password wait`, and load the key with `bcachefs unlock`.
 
 Build
 =====
@@ -59,4 +48,3 @@ Dependencies:
 * zlib
 * liblz4
 * libzstd
-* libkeyutils
