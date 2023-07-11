@@ -37,7 +37,7 @@ int cmd_fsck(int argc, char *argv[])
 
 	opt_set(opts, degraded, true);
 	opt_set(opts, fsck, true);
-	opt_set(opts, fix_errors, FSCK_OPT_ASK);
+	opt_set(opts, fix_errors, FSCK_FIX_ask);
 
 	while ((opt = getopt_long(argc, argv,
 				  "apynfo:rvh",
@@ -45,14 +45,14 @@ int cmd_fsck(int argc, char *argv[])
 		switch (opt) {
 		case 'a': /* outdated alias for -p */
 		case 'p':
-			opt_set(opts, fix_errors, FSCK_OPT_YES);
+			opt_set(opts, fix_errors, FSCK_FIX_yes);
 			break;
 		case 'y':
-			opt_set(opts, fix_errors, FSCK_OPT_YES);
+			opt_set(opts, fix_errors, FSCK_FIX_no);
 			break;
 		case 'n':
 			opt_set(opts, nochanges, true);
-			opt_set(opts, fix_errors, FSCK_OPT_NO);
+			opt_set(opts, fix_errors, FSCK_FIX_no);
 			break;
 		case 'f':
 			/* force check, even if filesystem marked clean: */

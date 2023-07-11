@@ -213,7 +213,7 @@ static inline struct kmem_cache *kmem_cache_create(size_t obj_size)
 
 #define vfree(p)		free(p)
 
-static inline void *__vmalloc(unsigned long size, gfp_t flags)
+static inline void *__vmalloc_noprof(unsigned long size, gfp_t flags)
 {
 	unsigned i;
 	void *p;
@@ -234,6 +234,7 @@ static inline void *__vmalloc(unsigned long size, gfp_t flags)
 
 	return p;
 }
+#define __vmalloc __vmalloc_noprof
 
 static inline void *vmalloc_exec(unsigned long size, gfp_t gfp_mask)
 {

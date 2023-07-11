@@ -44,6 +44,7 @@ struct user_namespace;
 #define FMODE_32BITHASH         ((__force fmode_t)0x200)
 /* 64bit hashes as llseek() offset (for directories) */
 #define FMODE_64BITHASH         ((__force fmode_t)0x400)
+#define FMODE_BUFFERED		((__force fmode_t)0x800)
 
 struct inode {
 	unsigned long		i_ino;

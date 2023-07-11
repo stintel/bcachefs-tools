@@ -234,7 +234,7 @@ int cmd_list_journal(int argc, char *argv[])
 	opt_set(opts, norecovery,	true);
 	opt_set(opts, degraded,		true);
 	opt_set(opts, errors,		BCH_ON_ERROR_continue);
-	opt_set(opts, fix_errors,	FSCK_OPT_YES);
+	opt_set(opts, fix_errors,	FSCK_FIX_yes);
 	opt_set(opts, keep_journal,	true);
 	opt_set(opts, read_journal_only,true);
 

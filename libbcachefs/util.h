@@ -64,7 +64,7 @@ static inline void *vpmalloc_noprof(size_t size, gfp_t gfp_mask)
 {
 	return (void *) get_free_pages_noprof(gfp_mask|__GFP_NOWARN,
 					      get_order(size)) ?:
-		__vmalloc(size, gfp_mask);
+		__vmalloc_noprof(size, gfp_mask);
 }
 #define vpmalloc(_size, _gfp)	alloc_hooks(vpmalloc_noprof(_size, _gfp))
 

@@ -12,9 +12,9 @@
 
 static int bch2_subvolume_delete(struct btree_trans *, u32);
 
-static inline u32 get_ancestor_below(struct bch_fs *c, u32 id, u32 ancestor)
+static inline u32 get_ancestor_below(struct snapshot_table *t, u32 id, u32 ancestor)
 {
-	struct snapshot_t *s = snapshot_t(c, id);
+	const struct snapshot_t *s = __snapshot_t(t, id);
 
 	if (s->skip[2] <= ancestor)
 		return s->skip[2];
@@ -27,20 +27,81 @@ static inline u32 get_ancestor_below(struct bch_fs *c, u32 id, u32 ancestor)
 
 bool bch2_snapshot_is_ancestor(struct bch_fs *c, u32 id, u32 ancestor)
 {
+	struct snapshot_table *t;
+
 	EBUG_ON(c->curr_recovery_pass <= BCH_RECOVERY_PASS_check_snapshots);
 
+	rcu_read_lock();
+	t = rcu_dereference(c->snapshots);
+
 	while (id && id < ancestor)
-		id = get_ancestor_below(c, id, ancestor);
+		id = get_ancestor_below(t, id, ancestor);
+	rcu_read_unlock();
 
 	return id == ancestor;
 }
 
 static bool bch2_snapshot_is_ancestor_early(struct bch_fs *c, u32 id, u32 ancestor)
 {
+	struct snapshot_table *t;
+
+	rcu_read_lock();
+	t = rcu_dereference(c->snapshots);
+
 	while (id && id < ancestor)
-		id = snapshot_t(c, id)->parent;
+		id = __snapshot_t(t, id)->parent;
+	rcu_read_unlock();
 
 	return id == ancestor;
+}
+
+static inline u32 bch2_snapshot_depth(struct bch_fs *c, u32 parent)
+{
+	u32 depth;
+
+	rcu_read_lock();
+	depth = parent ? snapshot_t(c, parent)->depth + 1 : 0;
+	rcu_read_unlock();
+
+	return depth;
+}
+
+static noinline struct snapshot_t *__snapshot_t_mut(struct bch_fs *c, u32 id)
+{
+	size_t idx = U32_MAX - id;
+	size_t new_size;
+	struct snapshot_table *new, *old;
+
+	new_size = max(16UL, roundup_pow_of_two(idx + 1));
+
+	new = kvzalloc(struct_size(new, s, new_size), GFP_KERNEL);
+	if (!new)
+		return NULL;
+
+	old = c->snapshots;
+	if (old)
+		memcpy(new->s,
+		       rcu_dereference_protected(c->snapshots, true)->s,
+		       sizeof(new->s[0]) * c->snapshot_table_size);
+
+	rcu_assign_pointer(c->snapshots, new);
+	c->snapshot_table_size = new_size;
+	if (old)
+		kvfree_rcu(old);
+
+	return &rcu_dereference_protected(c->snapshots, true)->s[idx];
+}
+
+static inline struct snapshot_t *snapshot_t_mut(struct bch_fs *c, u32 id)
+{
+	size_t idx = U32_MAX - id;
+
+	lockdep_assert_held(&c->snapshot_table_lock);
+
+	if (likely(idx < c->snapshot_table_size))
+		return &rcu_dereference_protected(c->snapshots, true)->s[idx];
+
+	return __snapshot_t_mut(c, id);
 }
 
 /* Snapshot tree: */
@@ -202,12 +263,15 @@ int bch2_mark_snapshot(struct btree_trans *trans,
 {
 	struct bch_fs *c = trans->c;
 	struct snapshot_t *t;
+	int ret = 0;
 
-	t = genradix_ptr_alloc(&c->snapshots,
-			       U32_MAX - new.k->p.offset,
-			       GFP_KERNEL);
-	if (!t)
-		return -BCH_ERR_ENOMEM_mark_snapshot;
+	mutex_lock(&c->snapshot_table_lock);
+
+	t = snapshot_t_mut(c, new.k->p.offset);
+	if (!t) {
+		ret = -BCH_ERR_ENOMEM_mark_snapshot;
+		goto err;
+	}
 
 	if (new.k->type == KEY_TYPE_snapshot) {
 		struct bkey_s_c_snapshot s = bkey_s_c_to_snapshot(new);
@@ -231,8 +295,9 @@ int bch2_mark_snapshot(struct btree_trans *trans,
 		t->subvol	= 0;
 		t->tree		= 0;
 	}
-
-	return 0;
+err:
+	mutex_unlock(&c->snapshot_table_lock);
+	return ret;
 }
 
 static int snapshot_lookup(struct btree_trans *trans, u32 id,
@@ -285,9 +350,14 @@ static int bch2_snapshot_set_equiv(struct btree_trans *trans, struct bkey_s_c k)
 		nr_live += ret;
 	}
 
-	snapshot_t(c, id)->equiv = nr_live == 1
-		? snapshot_t(c, child[live_idx])->equiv
+	mutex_lock(&c->snapshot_table_lock);
+
+	snapshot_t_mut(c, id)->equiv = nr_live == 1
+		? snapshot_t_mut(c, child[live_idx])->equiv
 		: id;
+
+	mutex_unlock(&c->snapshot_table_lock);
+
 	return 0;
 }
 
@@ -505,16 +575,18 @@ static int snapshot_tree_ptr_good(struct btree_trans *trans,
 
 static u32 snapshot_rand_ancestor_get(struct bch_fs *c, u32 id)
 {
-	struct snapshot_t *s;
+	const struct snapshot_t *s;
 
 	if (!id)
 		return 0;
 
+	rcu_read_lock();
 	s = snapshot_t(c, id);
-	if (!s->parent)
-		return id;
+	if (s->parent)
+		id = bch2_snapshot_nth_parent(c, id, get_random_u32_below(s->depth));
+	rcu_read_unlock();
 
-	return bch2_snapshot_nth_parent(c, id, get_random_u32_below(s->depth));
+	return id;
 }
 
 static int snapshot_rand_ancestor_good(struct btree_trans *trans,
@@ -613,9 +685,7 @@ static int check_snapshot(struct btree_trans *trans,
 	struct bch_snapshot v;
 	struct bkey_i_snapshot *u;
 	u32 parent_id = bch2_snapshot_parent_early(c, k.k->p.offset);
-	struct snapshot_t *parent = parent_id
-		? snapshot_t(c, parent_id)
-		: NULL;
+	u32 real_depth;
 	struct printbuf buf = PRINTBUF;
 	bool should_have_subvol;
 	u32 i, id;
@@ -706,16 +776,18 @@ static int check_snapshot(struct btree_trans *trans,
 	}
 	ret = 0;
 
-	if (fsck_err_on(le32_to_cpu(s.depth) != (parent ? parent->depth + 1 : 0), c,
+	real_depth = bch2_snapshot_depth(c, parent_id);
+
+	if (fsck_err_on(le32_to_cpu(s.depth) != real_depth, c,
 			"snapshot with incorrect depth fields, should be %u:\n  %s",
-			parent->depth + 1,
+			real_depth,
 			(bch2_bkey_val_to_text(&buf, c, k), buf.buf))) {
 		u = bch2_bkey_make_mut_typed(trans, iter, &k, 0, snapshot);
 		ret = PTR_ERR_OR_ZERO(u);
 		if (ret)
 			goto err;
 
-		u->v.depth = cpu_to_le32(parent ? parent->depth + 1 : 0);
+		u->v.depth = cpu_to_le32(real_depth);
 		s = u->v;
 	}
 
@@ -799,8 +871,12 @@ static int check_subvol(struct btree_trans *trans,
 
 	if (!BCH_SUBVOLUME_SNAP(subvol.v)) {
 		u32 snapshot_root = bch2_snapshot_root(c, le32_to_cpu(subvol.v->snapshot));
-		u32 snapshot_tree = snapshot_t(c, snapshot_root)->tree;
+		u32 snapshot_tree;
 		struct bch_snapshot_tree st;
+
+		rcu_read_lock();
+		snapshot_tree = snapshot_t(c, snapshot_root)->tree;
+		rcu_read_unlock();
 
 		ret = bch2_snapshot_tree_lookup(trans, snapshot_tree, &st);
 
@@ -845,7 +921,7 @@ int bch2_check_subvols(struct bch_fs *c)
 
 void bch2_fs_snapshots_exit(struct bch_fs *c)
 {
-	genradix_free(&c->snapshots);
+	kfree(c->snapshots);
 }
 
 int bch2_snapshots_read(struct bch_fs *c)
@@ -987,7 +1063,7 @@ static int create_snapids(struct btree_trans *trans, u32 parent, u32 tree,
 	struct bkey_i_snapshot *n;
 	struct bkey_s_c k;
 	unsigned i, j;
-	u32 depth = parent ? snapshot_t(c, parent)->depth + 1 : 0;
+	u32 depth = bch2_snapshot_depth(c, parent);
 	int ret;
 
 	bch2_trans_iter_init(trans, &iter, BTREE_ID_snapshots,
@@ -1126,7 +1202,7 @@ static int snapshot_delete_key(struct btree_trans *trans,
 			       struct bpos *last_pos)
 {
 	struct bch_fs *c = trans->c;
-	u32 equiv = snapshot_t(c, k.k->p.snapshot)->equiv;
+	u32 equiv = bch2_snapshot_equiv(c, k.k->p.snapshot);
 
 	if (!bkey_eq(k.k->p, *last_pos))
 		equiv_seen->nr = 0;

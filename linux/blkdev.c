@@ -183,16 +183,19 @@ struct block_device *blkdev_get_by_path(const char *path, fmode_t mode,
 	else if (mode & FMODE_WRITE)
 		flags = O_WRONLY;
 
+	if (!(mode & FMODE_BUFFERED))
+		flags |= O_DIRECT;
+
 #if 0
 	/* using O_EXCL doesn't work with opening twice for an O_SYNC fd: */
 	if (mode & FMODE_EXCL)
 		flags |= O_EXCL;
 #endif
-	buffered_fd = open(path, flags);
+	buffered_fd = open(path, flags & ~O_DIRECT);
 	if (buffered_fd < 0)
 		return ERR_PTR(-errno);
 
-	fd = open(path, flags|O_DIRECT);
+	fd = open(path, flags);
 	if (fd < 0)
 		fd = dup(buffered_fd);
 	if (fd < 0) {
@@ -200,9 +203,9 @@ struct block_device *blkdev_get_by_path(const char *path, fmode_t mode,
 		return ERR_PTR(-errno);
 	}
 
-	sync_fd	= open(path, flags|O_DIRECT|O_SYNC);
+	sync_fd	= open(path, flags|O_SYNC);
 	if (sync_fd < 0)
-		sync_fd	= open(path, flags|O_SYNC);
+		sync_fd	= open(path, (flags & ~O_DIRECT)|O_SYNC);
 	if (sync_fd < 0) {
 		close(fd);
 		close(buffered_fd);

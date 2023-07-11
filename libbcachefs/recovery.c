@@ -1162,12 +1162,9 @@ static void check_version_upgrade(struct bch_fs *c)
 			prt_str(&buf, " incomplete\n");
 		}
 
-		prt_str(&buf, "Doing ");
-		if (BCH_VERSION_MAJOR(old_version) != BCH_VERSION_MAJOR(new_version))
-			prt_str(&buf, "incompatible");
-		else
-			prt_str(&buf, "compatible");
-		prt_str(&buf, "version upgrade from ");
+		prt_printf(&buf, "Doing %s version upgrade from ",
+			   BCH_VERSION_MAJOR(old_version) != BCH_VERSION_MAJOR(new_version)
+			   ? "incompatible" : "compatible");
 		bch2_version_to_text(&buf, old_version);
 		prt_str(&buf, " to ");
 		bch2_version_to_text(&buf, new_version);
@@ -1178,7 +1175,7 @@ static void check_version_upgrade(struct bch_fs *c)
 			prt_str(&buf, "fsck required");
 
 			c->recovery_passes_explicit |= recovery_passes;
-			c->opts.fix_errors = FSCK_OPT_YES;
+			c->opts.fix_errors = FSCK_FIX_yes;
 		}
 
 		bch_info(c, "%s", buf.buf);

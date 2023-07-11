@@ -604,8 +604,7 @@ struct bch_opts bch2_parse_opts(struct bch_opt_strs strs)
 	u64 v;
 
 	for (i = 0; i < bch2_opts_nr; i++) {
-		if (!strs.by_id[i] ||
-		    bch2_opt_table[i].type == BCH_OPT_FN)
+		if (!strs.by_id[i])
 			continue;
 
 		ret = bch2_opt_parse(NULL,

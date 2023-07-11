@@ -117,7 +117,7 @@ int cmd_dump(int argc, char *argv[])
 	opt_set(opts, norecovery,	true);
 	opt_set(opts, degraded,		true);
 	opt_set(opts, errors,		BCH_ON_ERROR_continue);
-	opt_set(opts, fix_errors,	FSCK_OPT_NO);
+	opt_set(opts, fix_errors,	FSCK_FIX_no);
 
 	while ((opt = getopt(argc, argv, "o:fjvh")) != -1)
 		switch (opt) {

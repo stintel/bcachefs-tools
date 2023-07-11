@@ -12,6 +12,7 @@
 #define rcu_access_pointer(p)		READ_ONCE(p)
 
 #define kfree_rcu(ptr, rcu_head)	kfree(ptr) /* XXX */
+#define kvfree_rcu(ptr)			kfree(ptr) /* XXX */
 
 #define RCU_INIT_POINTER(p, v)		WRITE_ONCE(p, v)
 
